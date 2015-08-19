@@ -1,0 +1,744 @@
+---
+title: "Habits"
+output:
+  html_document:
+    pandoc_args: [
+      "+RTS", "-K64m",
+      "-RTS"
+    ]
+---
+
+## **1) Exploratory Analysis- Georgia Vote Undercount**
+Reading the data into a vector georgia2000
+```{r warning=FALSE}
+georgia2000=read.csv("C:/Users/Ramyasai/Desktop/Predictive modelling/James/STA380-master(1)/STA380-master/data/georgia2000.csv")
+vote_data = georgia2000
+head(vote_data)
+
+```
+
+Creating a variable undercount_values which is the difference between ballots and votes
+
+```{r warning=FALSE}
+# Making the variable with undercounts magnitude
+vote_data['Undercount_Values'] = vote_data['ballots'] - vote_data['votes']
+head(vote_data)
+
+```
+
+For comparsion, of undercounts in different counties, we should calculate % undercounted votes
+(i.e standardize) so that a smaller county doesnt get undue advantage of having smaller 
+magnitude of undercounts
+
+```{r warning=FALSE}
+vote_data['Undercount_Rate%'] = round((vote_data['Undercount_Values']/vote_data['ballots'])*100,2)
+head(vote_data)
+```
+
+Checking if any counties had no undercounts
+```{r warning=FALSE}
+perfect_counties = subset(vote_data, select = c('Undercount_Values'))
+cat("Number of counties which had no undercount problems in election:", length(perfect_counties[perfect_counties$Undercount_Values== 0,]))
+```
+Almost all counties in Georgia had this undercount issue.
+
+Getting the frequency distribution of voteunder rates by voting equipment used. First we'll visualize using a table since very few categories of Equipment are there.For easy visualization, a bar plot is drawn
+
+```{r warning=FALSE}
+Undercounts_Equip = data.frame(aggregate(Undercount_Values~equip, sum, data=vote_data))
+Undercounts_Equip
+
+```
+
+
+Now it looks like Optical and Punches have too many undercountings. Now we can plot equipment
+vs the number of undercounts they cause
+```{r warning=FALSE}
+freq = Undercounts_Equip$Undercount_Values
+barplot(freq,names.arg = c("Lever", "Optical", "Paper", "Punch"), col=rainbow(5), xlab= "Type of voting equipment", ylab="# of Undercounts", main="Frequency distribution of Undercounts across Equipment", ylim=c(0,40000), border=FALSE)
+```
+
+We need to standardize the number of undercounts. It is possible that overall ballots for Optical was e.g. 80000, in that case the 38000 is just close to 50% times.
+Getting the number of ballots assigned to each equipment
+
+```{r warning=FALSE}
+Ballots_Equip= data.frame(aggregate(ballots~equip, sum, data=vote_data))
+
+```
+
+Integtaring the undercounts information in the table with equipment and ballots
+
+```{r warning=FALSE}
+Ballots_Equip_Undercounts = cbind(Ballots_Equip, freq)
+```
+
+Creating a percentage undercounts column
+
+```{r warning=FALSE}
+Ballots_Equip_Undercounts['per_Undercounts'] = round((Ballots_Equip_Undercounts['freq']/Ballots_Equip_Undercounts['ballots'])*100,2)
+Ballots_Equip_Undercounts
+```
+
+
+Punch has the highest %age of Undercounts, and not Optical. If one were
+to check devices for tampering(and if people not been able to follow instructions was ruled out), I'd defintely check the Punches
+
+Optical and Punches have too many undercountings. Now we can plot equipment
+vs the number of undercounts they cause
+
+```{r warning=FALSE}
+percent_undercount = Ballots_Equip_Undercounts$per_Undercounts
+barplot(percent_undercount,names.arg = c("Lever", "Optical", "Paper", "Punch"), col=rainbow(4), xlab= "Type of voting equipment",ylab="# of Undercounts", main="PercentageUndercounts across Equipment", ylim=c(0,5), border=FALSE)
+```
+
+**Checking if the undercounts for these machines, affects poverty and minorities**
+
+However, with the available data it is useful to see, % of undercounts by poverty and equipment
+
+Replacing Poor values as 'Poor' and 'Rich' (instead of 1 and 0) to make it a categorical variable
+
+
+```{r warning=FALSE}
+vote_data = transform(vote_data, isPoor = ifelse(poor == 0, ifelse(poor == 1,0, "Rich"), "Poor"))
+
+```
+
+Calculating sum of overall ballots and sum of overall votes across, each machine and poverty flag
+
+```{r warning=FALSE}
+library(sqldf)
+equip_poverty_sums = data.frame(sqldf('SELECT equip, isPoor, SUM(votes) AS sum_votes, SUM(ballots) AS sum_ballots FROM vote_data GROUP BY equip, isPoor'))
+
+equip_poverty_sums['Undercounts'] = equip_poverty_sums['sum_ballots'] - equip_poverty_sums['sum_votes']
+
+equip_poverty_sums['Per_Undercounts'] = round((equip_poverty_sums['Undercounts'])/(equip_poverty_sums['sum_ballots'])*100,2)
+
+```
+
+
+Having a look at the table of percentage undercounts by equipment and poverty level
+equip_poverty_sums
+
+From the numerical table, it looks like percentage undercounts are much more in counties which have more people people
+We can plot it to have more easy readability
+
+
+Creating a temporary dataframe to hold only the final columns we need for plotting
+
+
+```{r warning=FALSE}
+temp_poverty_equip_data = equip_poverty_sums[,c(1,2,6)]
+
+```
+
+Plotting the undercounts across equipment and poverty level
+
+```{r warning=FALSE}
+library(lattice)
+barchart(Per_Undercounts~equip,data=temp_poverty_equip_data,groups=isPoor, xlab= "Equip and Poverty", ylab = "Pecentage Undercouts", main= "Percentage of Undercounts across equipment and Poverty level", ylim=c(0,8), col=c("darkorange4","darkorange2"), key= list(space="top", text=list(c("Poor", "Rich"),col=c("darkorange4", "darkorange2"))))
+
+```
+
+---------------------
+Calculating number of African Americans in each county assuming total population is ballots
+
+```{r warning=FALSE}
+vote_data['Num_AA'] = round(((vote_data['perAA']/100) * vote_data['ballots']),0)
+
+```
+
+Now calculating sum(ballots), sum(votes) and sum(african american people) by equipment
+
+```{r warning=FALSE}
+minority_equip_votes = data.frame(sqldf('SELECT equip, SUM(votes) AS sum_votes, SUM(ballots) AS sum_ballots, sum(Num_AA) as NumAA FROM vote_data GROUP BY equip'))
+
+```
+
+
+
+Calculating percentage undercounts and percentage african americans for each equipment
+
+```{r warning=FALSE}
+minority_equip_votes['Per_Undercounts'] = round(((minority_equip_votes['sum_ballots'] - minority_equip_votes['sum_votes'])/(minority_equip_votes['sum_ballots'])*100),2)
+
+minority_equip_votes['Per_AA'] = round(((minority_equip_votes['NumAA']/minority_equip_votes['sum_ballots'])*100),2)
+```
+
+Creating a temporary dataframe to hold only the final columns we need for plotting
+
+```{r warning=FALSE}
+temp_minority_votes_data = minority_equip_votes[,c(1,5,6)]
+
+head(temp_minority_votes_data)
+
+plot_x_axis = c("Lever", "Optical", "Paper", "Punch")
+y1_axis = temp_minority_votes_data$Per_Undercounts
+y2_axis = temp_minority_votes_data$Per_AA
+
+```
+
+
+```{r warning=FALSE}
+plot1=barplot(names.arg= plot_x_axis,y1_axis, col=rainbow(4), xlab= "Type of voting equipment",ylab="% of Undercounts and Minority", main="PercentageUndercounts and Percentage Minority across Equipment", ylim=c(0,5), border=FALSE)
+
+```
+
+
+```{r warning=FALSE}
+par(new=TRUE)
+```
+
+
+```{r warning=FALSE}
+plot(plot_x_axis,temp_minority_votes_data$Per_AA,type="l",col="blue",xlim=c(0,1),ylim=c(0,0.5))
+axis(2)
+```
+
+-------------------------------------------------------------------------------------------------------
+Question2 
+-------------------------------------------------------------------------------------------------------
+
+## **2) Bootstrapping - Exchange Traded Fund**
+
+After obtaining the data for 5 years from Yahoo, I will first simulate a scenarios where I equal money into all stocks.
+
+```{r warning=FALSE}
+
+# Downloading 5 year data for SPY, TLT, LQD, EEM and VNQ
+library(fImport)
+tickers = c("SPY", "TLT", "LQD", "EEM", "VNQ")
+history_data_stocks = yahooSeries(tickers, from='2010-08-01', to='2015-08-01')
+# The first few rows
+head(history_data_stocks)
+
+# Using Prof. Scott's helper function, which helps us in calculating returns of each ticker
+# or stock
+
+Returns_YahooStocks = function(series) {
+  mycols = grep('Adj.Close', colnames(series))
+	closingprice = series[,mycols]
+	N = nrow(closingprice)
+	percentreturn = as.data.frame(closingprice[2:N,]) / as.data.frame(closingprice[1:(N-1),]) - 1
+	mynames = strsplit(colnames(percentreturn), '.', fixed=TRUE)
+	mynames = lapply(mynames, function(x) return(paste0(x[1], ".PctReturn")))
+	colnames(percentreturn) = mynames
+	as.matrix(na.omit(percentreturn))
+}
+
+# Calculating returns for the whole data which was downloaded from Yahoo
+myreturns = Returns_YahooStocks(history_data_stocks)
+
+# The pair plots help in giving us a preliminary idea about the stocks. Looks like EEM and LQD # are highly correlated. SPY and TLT are highly correlated
+pairs(myreturns)
+
+library(mosaic)
+library(fImport)
+library(foreach)
+
+```
+
+Now simulate many different possible trading years assuming that my portfolio is rebalanced each day at zero transaction cost.
+
+
+```{r warning=FALSE}
+set.seed(10)
+equal_sim = foreach(i=1:5000, .combine='rbind') %do% {
+  mywealth = 100000
+	weights = c(0.2, 0.2, 0.2, 0.2, 0.2)
+	holdings = weights * mywealth
+  n_days=20 # 4 business weeks
+	equal_wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+	for(today in 1:n_days) {
+   return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = weights * mywealth
+		holdings = holdings + holdings*return.today
+		mywealth = sum(holdings)
+		equal_wealthtracker[today] = mywealth
+	}
+	equal_wealthtracker
+  
+}
+mywealth
+
+```
+
+Plotting a histogram based on the simulation 
+
+```{r warning=FALSE}
+hist(equal_sim[,n_days])
+
+```
+
+
+Checking for Profit/loss
+
+```{r warning=FALSE}
+hist(equal_sim[,n_days]- 100000,main="Profit/Loss Histogram for Equal Stock Portfolio",xlab="Returns")
+```
+
+Calculate 5% value at risk
+```{r warning=FALSE}
+quantile(equal_sim[,n_days], 0.05) - 100000
+```
+
+
+Now finding risks for each ticker
+**SPY**
+
+```{r warning=FALSE}
+
+set.seed(10)
+SPY_sim = foreach(i=1:5000, .combine='rbind') %do% {
+  mywealth = 100000
+  weights = c(1.0, 0.0, 0.0, 0.0, 0.0) # Putting all my money in SPY
+	holdings = weights * mywealth
+  n_days=20 # 4 business weeks
+	SPY_wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+	for(today in 1:n_days) {
+   return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = weights * mywealth
+		holdings = holdings + holdings*return.today
+		mywealth = sum(holdings)
+		SPY_wealthtracker[today] = mywealth
+	}
+	SPY_wealthtracker
+  
+}
+mywealth
+
+
+# Profit/loss
+hist(SPY_sim[,n_days]- 100000,main="Profit/Loss Histogram for SPY Stock",xlab="Returns")
+
+# Calculate 5% value at risk
+quantile(SPY_sim[,n_days], 0.05) - 100000
+```
+
+Now finding risks for each ticker
+**TLT**
+```{r warning=FALSE}
+set.seed(10)
+TLT_sim = foreach(i=1:5000, .combine='rbind') %do% {
+  mywealth = 100000
+  weights = c(0.0, 1.0, 0.0, 0.0, 0.0) # Putting all my money in TLT
+  holdings = weights * mywealth
+  n_days=20 # 4 business weeks
+	TLT_wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+	for(today in 1:n_days) {
+   return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = weights * mywealth
+		holdings = holdings + holdings*return.today
+		mywealth = sum(holdings)
+		TLT_wealthtracker[today] = mywealth
+	}
+	TLT_wealthtracker
+  
+}
+mywealth
+
+# Profit/loss
+hist(TLT_sim[,n_days]- 100000,main="Profit/Loss Histogram for TLT Stock",xlab="Returns")
+
+# Calculate 5% value at risk
+quantile(TLT_sim[,n_days], 0.95) - 100000
+```
+
+Now finding risks for each ticker
+**LQD**
+
+```{r warning=FALSE}
+set.seed(10)
+LQD_sim = foreach(i=1:5000, .combine='rbind') %do% {
+  mywealth = 100000
+  weights = c(0.0, 0.0, 1.0, 0.0, 0.0) # Putting all my money in LQD
+  holdings = weights * mywealth
+  n_days=20 # 4 business weeks
+  LQD_wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+	for(today in 1:n_days) {
+   return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = weights * mywealth
+		holdings = holdings + holdings*return.today
+		mywealth = sum(holdings)
+		LQD_wealthtracker[today] = mywealth
+	}
+	LQD_wealthtracker
+  
+}
+mywealth
+
+# Profit/loss
+hist(LQD_sim[,n_days]- 100000,main="Profit/Loss Histogram for LQD Stock",xlab="Returns")
+
+# Calculate 5% value at risk
+quantile(LQD_sim[,n_days], 0.05) - 100000
+
+```
+
+Now finding risks for each ticker
+**EEM**
+
+```{r warning=FALSE}
+set.seed(10)
+EEM_sim = foreach(i=1:5000, .combine='rbind') %do% {
+  mywealth = 100000
+  weights = c(0.0, 0.0, 0.0, 1.0, 0.0) # Putting all my money in EEM
+  holdings = weights * mywealth
+  n_days=20 # 4 business weeks
+  EEM_wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+  for(today in 1:n_days) {
+   return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = weights * mywealth
+		holdings = holdings + holdings*return.today
+		mywealth = sum(holdings)
+		EEM_wealthtracker[today] = mywealth
+	}
+	EEM_wealthtracker
+  
+}
+mywealth
+
+# Profit/loss
+hist(EEM_sim[,n_days]- 100000,main="Profit/Loss Histogram for EEM Stocks",xlab="Returns")
+
+# Calculate 5% value at risk
+quantile(EEM_sim[,n_days], 0.05) - 100000
+
+```
+
+Now finding risks for each ticker
+**VNQ**
+
+```{r warning=FALSE}
+set.seed(10)
+VNQ_sim = foreach(i=1:5000, .combine='rbind') %do% {
+  mywealth = 100000
+  weights = c(0.0, 0.0, 0.0, 0.0, 1.0) # Putting all my money in EEM
+  holdings = weights * mywealth
+  n_days=20 # 4 business weeks
+  VNQ_wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+  for(today in 1:n_days) {
+   return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = weights * mywealth
+  	holdings = holdings + holdings*return.today
+		mywealth = sum(holdings)
+		VNQ_wealthtracker[today] = mywealth
+	}
+	VNQ_wealthtracker
+  
+}
+mywealth
+
+# Profit/loss
+hist(VNQ_sim[,n_days]- 100000,main="Profit/Loss Histogram for VNQ Stocks",xlab="Returns")
+
+# Calculate 5% value at risk
+quantile(VNQ_sim[,n_days], 0.95) - 100000
+
+```
+
+Trying to see the risk and evaluating which stocks are risky and safe
+
+```{r warning=FALSE}
+quantile(SPY_sim[,n_days], 0.05) - 100000
+quantile(TLT_sim[,n_days], 0.05) - 100000
+quantile(LQD_sim[,n_days], 0.05) - 100000
+quantile(EEM_sim[,n_days], 0.05) - 100000
+quantile(VNQ_sim[,n_days], 0.05) - 100000
+```
+
+Simulating for a risky portfolio
+
+```{r warning=FALSE}
+set.seed(10)
+risky_sim = foreach(i=1:5000, .combine='rbind') %do% {
+  mywealth = 100000
+  weights = c(0.0, 0.5, 0.0, 0.1, 0.4)
+	holdings = weights * mywealth
+  n_days=20 # 4 business weeks
+	risky_wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+	for(today in 1:n_days) {
+   return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = weights * mywealth
+		holdings = holdings + holdings*return.today
+		mywealth = sum(holdings)
+		risky_wealthtracker[today] = mywealth
+	}
+	risky_wealthtracker
+  
+}
+mywealth
+
+# Profit/loss
+hist(risky_sim[,n_days]- 100000)
+
+# Calculate 5% value at risk
+quantile(risky_sim[,n_days], 0.05) - 100000
+```
+
+Simulating for a safe portfolio
+
+```{r warning=FALSE}
+set.seed(10)
+safe_sim = foreach(i=1:5000, .combine='rbind') %do% {
+  mywealth = 100000
+  weights = c(0.1, 0.1, 0.8, 0.0, 0.0)
+  holdings = weights * mywealth
+  n_days=20 # 4 business weeks
+	safe_wealthtracker = rep(0, n_days) # Set up a placeholder to track total wealth
+	for(today in 1:n_days) {
+   return.today = resample(myreturns, 1, orig.ids=FALSE)
+    holdings = weights * mywealth
+		holdings = holdings + holdings*return.today
+		mywealth = sum(holdings)
+		safe_wealthtracker[today] = mywealth
+	}
+	safe_wealthtracker
+  
+}
+mywealth
+
+# Profit/loss
+hist(safe_sim[,n_days]- 100000)
+
+# Calculate 5% value at risk
+quantile(safe_sim[,n_days], 0.05) - 100000
+```
+
+---
+title: "Habits"
+output:
+  html_document:
+    pandoc_args: [
+      "+RTS", "-K64m",
+      "-RTS"
+    ]
+---
+
+Question 3
+
+Importing the wine data 
+
+```{r warning=FALSE}
+wine<-read.csv("C:/Users/Ramyasai/Desktop/wine.csv")
+attach(wine)
+```
+
+Encoding column quality as a factor 
+To enable to run K means 
+```{r warning=FALSE}
+wine$quality<-as.factor(wine$quality)
+```
+
+Selecting only the 11 chemical properties columns for the K means clustering
+and scaling the data after excluding quality and color columns
+```{r warning=FALSE}
+set.seed(25)
+dfcolor<-wine$color
+winescaled <- scale(wine[,-c(12,13)], center=TRUE, scale=TRUE)
+```
+
+Clustering the data using K means with K=2 
+Comparing the color column with the color of the datapoints in each of the two clusters 
+```{r warning=FALSE}
+clusterall <- kmeans(winescaled, centers=2, nstart=50)
+table(dfcolor,clusterall$cluster)
+```
+1st cluster has 1585 red and 12 white wines only 14 red are being clustered erroneously 
+2nd cluster has 14 red and 4886 white wines i.e only 12 wines are being clustered erroneously 
+
+Identifying the centers and cluster after running K Means
+```{r}
+clusterall$centers
+#clusterall$cluster
+```
+
+Clustering with K=7 and comparing the results to check the quality of the wines of the clusters 
+```{r warning=FALSE}
+clusterall <- kmeans(winescaled, centers=7, nstart=50)
+dfquality=as.factor(wine$quality)
+table(dfquality,clusterall$cluster)
+```
+When we compare the quality within these 7 clusters there is no significant pattern hence diving into 7 clusters is not an effective idea 
+
+PCA 
+
+Importing the wine data from local and scaling the first 11 chemical properties columns to run PCA
+```{r warning=FALSE}
+dim(wine)
+wine<-read.csv("C:/Users/Ramyasai/Desktop/wine.csv")
+winescaled <- scale(wine[,-c(12,13)], center=TRUE, scale=TRUE)
+```
+
+Running PCA on the 11 chemical properties 
+
+```{r warning=FALSE}
+pc1 <-prcomp(winescaled, scale.=TRUE)
+names(pc1)
+pc1$scale
+```
+
+Look at the basic plotting and summary methods
+```{r warning=FALSE}
+pc1
+```
+Summary of pc1 gives the std error, proportion of variance and cumulative proportion  
+7 principal components cover 88% of the variance
+```{r warning=FALSE}
+summary(pc1)
+plot(pc1)
+biplot(pc1)
+```
+plot function is used to plot the variance on y axis and the principal components on the x axis 
+biplot of the principal component 
+A more informative biplot
+```{r warning=FALSE}
+loadings = pc1$rotation
+loadings
+scores = pc1$x
+#scores
+```
+Tabulating the loadings
+```{r warning=FALSE}
+o1 = order(loadings[,1])
+colnames(winescaled)[head(o1,5)]
+colnames(winescaled)[tail(o1,5)]
+```
+
+Plotting the scores and the color using qplot 
+
+```{r warning=FALSE}
+View(scores)
+library("ggplot2")
+qplot(scores[,1], scores[,2], color=wine$color, xlab='Component 1', ylab='Component 2')
+```
+
+Plotting the scores and quality using qplot 
+
+```{r warning=FALSE}
+wine$quality<-as.factor(wine$quality)
+qplot(scores[,1], scores[,2], color=wine$quality, xlab='Component 1', ylab='Component 2')
+```
+
+After looking at the qplot between quality and the scores for first and second principal components 
+we understand that the datapoints are quite cluttered and cant make the difference significantly. 
+
+Conclusion: Both K means and PCA are able to cluster color very well.But for quality both K means and PCA are not showing significant clusters. Still I will go with K means beacause the error for color is very less and for K means 
+
+-----------------------------------------------------------------------------------------------------
+Question 4 
+-----------------------------------------------------------------------------------------------------
+
+
+** 4) Market Segmentation **
+
+IMporting the social marketing data 
+```{r warning=FALSE}
+##Social Marketing
+
+par(mfrow=c(1,1))
+social_marketing = read.csv("C:/Users/Ramyasai/Desktop/Predictive modelling/James/STA380-master(1)/STA380-master/data/social_marketing.csv", header=TRUE)
+```
+
+After basic exploration of the data we are removing the rows which are spam and adult data 
+
+```{r warning=FALSE}
+social_marketing=social_marketing[-(social_marketing$spam >= 0 & social_marketing$adult>=0),]
+```
+Removing extra columns like uncategorized,chatter and photo sharing as we are not going to concentrate on this 
+```{r warning=FALSE}
+social_marketing = social_marketing[,c(-6,-2,-5)]
+```
+
+Calculate the CH index to calculate the number of clusters to identify the K size 
+
+```{r warning=FALSE}
+
+social_marketing_scaled <- scale(social_marketing[,-1], center=TRUE, scale=TRUE) 
+
+#To compute the value of k
+
+n= dim(social_marketing_scaled)[1]
+ch = numeric(length=20)
+set.seed = 12
+
+for(i in 2:20){
+  
+  kmean = kmeans(social_marketing_scaled, centers=i, nstart=25)
+  ch[i-1] = (sum(kmean$betweenss)/(i-1))/(kmean$tot.withinss/(n-i))
+}
+
+plot(2:20, ch[1:19], xlab='K', ylab='CH(K)', type='b', main='K-Means Clustering : CH Index vs K' )
+
+```
+
+We can understand that k value is should be taken close to 5 from the graph 
+
+
+```{r warning=FALSE}
+set.seed = 12
+cluster_all <- kmeans(social_marketing_scaled, centers=5, nstart=25)
+names(cluster_all)
+
+cluster1 = cluster_all$cluster
+social_marketing$cluster = cluster1
+```
+
+For Cluster 1
+
+```{r warning=FALSE}
+
+cluster1 = subset(social_marketing,cluster == 1)
+
+head(sort(sapply(cluster1[,c(-35,-1)],mean),decreasing=TRUE))
+```
+The group of people under cluster 4 can be identified as those interested in politics, travel and news. These can be classified as people of middle age group
+
+
+
+Cluster 2
+```{r warning=FALSE}
+cluster2 = subset(social_marketing,cluster == 2)
+
+head(sort(sapply(cluster2[,c(-35,-1)],mean),decreasing=TRUE))
+
+```
+We find that the data shows features about people who are young and in college 
+
+
+Cluster 3
+
+```{r warning=FALSE}
+cluster3 = subset(social_marketing,cluster == 3)
+
+head(sort(sapply(cluster3[,c(-35,-1)],mean),decreasing=TRUE))
+```
+
+The group of people under cluster 3 could be classified as those interested in health
+
+Cluster 4
+```{r warning=FALSE}
+cluster4 = subset(social_marketing,cluster == 4)
+
+head(sort(sapply(cluster4[,c(-35,-1)],mean),decreasing=TRUE))
+```
+
+We find that the segment of observations here are  young citizen who like to cook, fashion, beauty and shopping
+
+cluster 5
+```{r warning=FALSE}
+cluster5 = subset(social_marketing,cluster == 5)
+
+head(sort(sapply(cluster5[,c(-35,-1)],mean),decreasing=TRUE))
+```
+
+This cluster classifies people who are parents and in their middle 
+
+
+
+
+
+
+
+
+
+
